@@ -297,16 +297,6 @@ Returns the path."
   :lighter " Index"
   :keymap diogenes-roam-index-mode-map)
 
-(with-eval-after-load 'evil
-  (when (fboundp 'evil-define-key)
-    (evil-define-key 'normal diogenes-roam-index-mode-map
-      (kbd "RET") #'diogenes-roam-index-open-at-point
-      "q"         #'diogenes-roam-index-close
-      "gr"        #'diogenes-roam-index-refresh
-      "]n"        #'diogenes-roam-index-next
-      "[n"        #'diogenes-roam-index-previous
-      (kbd "M-n") #'diogenes-roam-index-next
-      (kbd "M-p") #'diogenes-roam-index-previous)))
 
 (defun diogenes-roam-index-buffer-p (&optional buffer)
   "Whether BUFFER is an index of passage notes."
