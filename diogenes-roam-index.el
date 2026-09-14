@@ -57,6 +57,9 @@
 (declare-function diogenes-org--levels "diogenes-org" (key))
 (declare-function diogenes-org--where "diogenes-org" (path))
 (declare-function diogenes-org--work-name "diogenes-org" (corpus author work))
+(declare-function diogenes-org--ref-at-point "diogenes-org" ())
+(declare-function diogenes-org--page-span "diogenes-org" ())
+(declare-function diogenes-browser-reference "diogenes-browser" ())
 (declare-function org-roam-db-query "org-roam-db" (sql &rest args))
 (declare-function org-roam-db-update-file "org-roam-db" (&optional file-path))
 
@@ -283,6 +286,8 @@ Returns the path."
     (define-key map (kbd "RET") #'diogenes-roam-index-open-at-point)
     (define-key map (kbd "q")   #'diogenes-roam-index-close)
     (define-key map (kbd "g")   #'diogenes-roam-index-refresh)
+    (define-key map (kbd "M-n") #'diogenes-roam-index-next)
+    (define-key map (kbd "M-p") #'diogenes-roam-index-previous)
     map)
   "Keys in an index buffer.")
 
@@ -297,7 +302,11 @@ Returns the path."
     (evil-define-key 'normal diogenes-roam-index-mode-map
       (kbd "RET") #'diogenes-roam-index-open-at-point
       "q"         #'diogenes-roam-index-close
-      "gr"        #'diogenes-roam-index-refresh)))
+      "gr"        #'diogenes-roam-index-refresh
+      "]n"        #'diogenes-roam-index-next
+      "[n"        #'diogenes-roam-index-previous
+      (kbd "M-n") #'diogenes-roam-index-next
+      (kbd "M-p") #'diogenes-roam-index-previous)))
 
 (defun diogenes-roam-index-buffer-p (&optional buffer)
   "Whether BUFFER is an index of passage notes."
@@ -443,7 +452,127 @@ ref of its own, so the block's own arguments are read instead."
     (message "%d index%s" (length seen) (if (= 1 (length seen)) "" "es"))))
 
 
+;;;; Walking the notes
+
+;; THE ORDER OF THE TEXT, and not the order they were written in.  A reader
+;; going through what they have said about a dialogue wants to meet the notes
+;; as the dialogue meets them, and `diogenes-roam-index--rows' is sorted that
+;; way already.
+
+(defun diogenes-roam-index--id-at-point ()
+  "The `id:' link at point, or nil.
+In an index, that names the note the line is about."
+  (when (derived-mode-p 'org-mode)
+    (let ((ctx (org-element-context)))
+      (when (and (memq (org-element-type ctx) '(link))
+                 (equal (org-element-property :type ctx) "id"))
+        (org-element-property :path ctx)))))
+
+(defun diogenes-roam-index--own-id ()
+  "The ID of the node point is in, or nil."
+  (when (derived-mode-p 'org-mode)
+    (or (org-entry-get nil "ID" t)
+        (save-excursion (goto-char (point-min)) (org-entry-get nil "ID")))))
+
+(defun diogenes-roam-index--citation-here ()
+  "The citation point is at in a browser, as a string, or nil.
+
+`diogenes-browser-reference' has no `:key' on the very first line of a
+freshly opened browser -- see `diogenes-roam--parts' -- so the page's own
+extent is asked for instead, which searches forward."
+  (when (derived-mode-p 'diogenes-browser-mode)
+    (or (plist-get (ignore-errors (diogenes-browser-reference)) :key)
+        (when-let* ((span (ignore-errors (diogenes-org--page-span)))
+                    (p (ignore-errors
+                         (diogenes-org--passage-parts (car span)))))
+          (nth 3 p)))))
+
+(defun diogenes-roam-index--position (rows)
+  "Where among ROWS point is: an index, or (before . CITATION), or nil.
+
+An integer where point is ON a note -- in the index, or in the note itself.
+A cons where point is in a browser, holding the citation of the line in view,
+which is between notes rather than at one."
+  (let ((id (or (diogenes-roam-index--id-at-point)
+                (unless (diogenes-roam-index-buffer-p)
+                  (diogenes-roam-index--own-id)))))
+    (or (and id (seq-position rows id
+                              (lambda (row key) (equal (nth 1 row) key))))
+        (when-let ((cite (diogenes-roam-index--citation-here)))
+          (cons 'before cite)))))
+
+(defun diogenes-roam-index--step (rows position n)
+  "The row N on from POSITION among ROWS, or nil at the ends."
+  (pcase position
+    ((and (pred integerp) i)
+     (let ((j (+ i n)))
+       (and (>= j 0) (< j (length rows)) (nth j rows))))
+    (`(before . ,cite)
+     ;; Between notes: the first after, or the last before.
+     (if (> n 0)
+         (seq-find (lambda (row)
+                     (diogenes-roam-index--citation< cite (nth 3 (nth 4 row))))
+                   rows)
+       (car (last (seq-filter
+                   (lambda (row)
+                     (diogenes-roam-index--citation< (nth 3 (nth 4 row)) cite))
+                   rows)))))
+    (_ (if (> n 0) (car rows) (car (last rows))))))
+
+(defun diogenes-roam-index--goto-row (row)
+  "Open ROW's note, and put the sidebar's point on its line."
+  (dolist (w (diogenes-roam-index--windows))
+    (with-current-buffer (window-buffer w)
+      (save-excursion
+        (goto-char (point-min))
+        (when (search-forward (concat "[[id:" (nth 1 row) "]") nil t)
+          (set-window-point w (line-beginning-position))))))
+  (let* ((pop-up-frames (pcase diogenes-roam-index-open-in
+                          ('window nil)
+                          ('frame  t)
+                          (_ pop-up-frames)))
+         (buffer (find-file-noselect (nth 3 row))))
+    (if (diogenes-roam-index-buffer-p)
+        ;; Never in the index's own window.
+        (pop-to-buffer buffer)
+      (pop-to-buffer-same-window buffer))
+    (message "%s" (diogenes-org--where (nth 0 row)))))
+
+;;;###autoload
+(defun diogenes-roam-index-next (&optional n)
+  "Open the next note on this work, in the order of the text.
+With a numeric prefix N, that many on; negative to go back.
+
+Works from a browser, from a note, and from the index."
+  (interactive "p")
+  (let* ((parts (or (diogenes-roam--parts)
+                    (and (diogenes-roam-index-buffer-p)
+                         (diogenes-roam-index--here))
+                    (user-error "No work here")))
+         (rows (apply #'diogenes-roam-index--rows parts)))
+    (unless rows (user-error "No notes on this work"))
+    (let* ((position (diogenes-roam-index--position rows))
+           (row (diogenes-roam-index--step rows position (or n 1))))
+      (if row
+          (diogenes-roam-index--goto-row row)
+        (message "No further notes on this work")))))
+
+;;;###autoload
+(defun diogenes-roam-index-previous (&optional n)
+  "Open the previous note on this work, in the order of the text."
+  (interactive "p")
+  (diogenes-roam-index-next (- (or n 1))))
+
+
 ;;;; Keeping up
+
+(defun diogenes-roam-index--refresh-windows ()
+  "Re-read any index on screen, its file having been rewritten."
+  (dolist (w (diogenes-roam-index--windows))
+    (with-current-buffer (window-buffer w)
+      (let ((inhibit-read-only t))
+        (ignore-errors (revert-buffer t t t)))
+      (diogenes-roam-index--setup))))
 
 (defvar diogenes-roam-index--captured nil
   "(CORPUS AUTHOR WORK) of the capture last begun.")
@@ -460,11 +589,33 @@ work can be learnt; by the time the capture is finalised the info is gone."
     (let ((p diogenes-roam-index--captured))
       (setq diogenes-roam-index--captured nil)
       (ignore-errors (apply #'diogenes-roam-index-update p))
-      (dolist (w (diogenes-roam-index--windows))
-        (with-current-buffer (window-buffer w)
-          (let ((inhibit-read-only t))
-            (ignore-errors (revert-buffer t t t)))
-          (diogenes-roam-index--setup))))))
+      (diogenes-roam-index--refresh-windows))))
+
+;; A NOTE IS EDITED AS OFTEN AS IT IS WRITTEN, and the index shows each note's
+;; first line, so an edit to that line makes the index wrong.  Saving is the
+;; moment to put it right.
+
+(defvar diogenes-roam-index--rebuilding nil
+  "Bound while an index is being written, to keep it from rebuilding itself.")
+
+(defun diogenes-roam-index--note-parts ()
+  "(CORPUS AUTHOR WORK) if this buffer is a passage note, else nil.
+
+STRICTLY FROM THE REF.  An index has no ref of its own and must not be
+mistaken for a note, or saving one would rebuild it for ever."
+  (unless (diogenes-roam-index-buffer-p)
+    (when-let* ((ref (ignore-errors (diogenes-org--ref-at-point)))
+                (p (ignore-errors (diogenes-org--passage-parts ref))))
+      (list (nth 0 p) (nth 1 p) (nth 2 p)))))
+
+(defun diogenes-roam-index--after-save ()
+  "Rebuild the index of the work whose note has just been saved."
+  (unless diogenes-roam-index--rebuilding
+    (when-let ((p (and (derived-mode-p 'org-mode)
+                       (diogenes-roam-index--note-parts))))
+      (let ((diogenes-roam-index--rebuilding t))
+        (ignore-errors (apply #'diogenes-roam-index-update p))
+        (diogenes-roam-index--refresh-windows)))))
 
 (defun diogenes-roam-index--browser-gone ()
   "Shut a sidebar whose browser has been killed."
@@ -486,6 +637,7 @@ work can be learnt; by the time the capture is finalised the info is gone."
   (if diogenes-roam-index-global-mode
       (progn
         (add-hook 'find-file-hook #'diogenes-roam-index--setup)
+        (add-hook 'after-save-hook #'diogenes-roam-index--after-save)
         (add-hook 'org-capture-after-finalize-hook
                   #'diogenes-roam-index--after-capture)
         (add-hook 'diogenes-browser-mode-hook
@@ -493,6 +645,7 @@ work can be learnt; by the time the capture is finalised the info is gone."
         (advice-add 'diogenes-roam-dir :before
                     #'diogenes-roam-index--note-capture))
     (remove-hook 'find-file-hook #'diogenes-roam-index--setup)
+    (remove-hook 'after-save-hook #'diogenes-roam-index--after-save)
     (remove-hook 'org-capture-after-finalize-hook
                  #'diogenes-roam-index--after-capture)
     (remove-hook 'diogenes-browser-mode-hook

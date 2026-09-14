@@ -128,12 +128,21 @@ Spacemacs, in `dotspacemacs/user-config`:
 | `diogenes-roam-index-toggle` | open the index of the work in view, or shut it |
 | `diogenes-roam-index-refresh` | rebuild the index being looked at (`g` in it) |
 | `diogenes-roam-index-rebuild-all` | an index for every work there are notes on |
+| `diogenes-roam-index-next` | the next note on this work, in the order of the text |
+| `diogenes-roam-index-previous` | the one before |
 | `diogenes-roam-find-passage` | find a passage note, any author |
 | `diogenes-roam-find-by-author` | find one, an author at a time |
 | `diogenes-roam-setup-latex-export` | have `diogenes:` links export as italics |
 
-In an index buffer: `RET` opens a note, `q` shuts the index, `g` rebuilds it.
-Read-only, since it is generated; `C-x C-q` to write prose above the block.
+In an index buffer: `RET` opens a note, `q` shuts the index, `g` rebuilds it,
+`M-n` and `M-p` walk the notes. Read-only, since it is generated; `C-x C-q` to
+write prose above the block.
+
+`diogenes-roam-index-next` and `-previous` work from a browser as well as from
+the index. In a browser they take the line in view and open the first note
+after it, or the last before; on a note, the one after that note. Always in
+the order of the TEXT rather than the order the notes were written, which is
+what a reader going through a dialogue wants.
 
 ## How the grouping works
 
@@ -195,7 +204,9 @@ would lose its ID and with it every link made to the index.
 Sorted by citation arithmetic, so `1048a.27` precedes `1048b.5` rather than
 sorting alphabetically after it.
 
-It rebuilds itself after every passage capture, and `g` rebuilds it by hand.
+It rebuilds itself after every passage capture and whenever a passage note is
+saved -- the index shows each note's first line, so an edit to that line would
+otherwise leave it wrong. `g` rebuilds it by hand.
 
 ### The sidebar
 
