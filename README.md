@@ -204,6 +204,45 @@ would lose its ID and with it every link made to the index.
 Sorted by citation arithmetic, so `1048a.27` precedes `1048b.5` rather than
 sorting alphabetically after it.
 
+### Divided into books
+
+Where the books of a work are known, the index groups the notes under them:
+
+```org
+#+BEGIN: dio-index :corpus "tlg" :author "0086" :work "025"
+- *Α* (Α) /book 1, from 980a/
+  - [[id:…][980a.21]] — all men by nature desire to know…
+- *Α ἔλαττον* /book 2, from 993a/
+  - [[id:…][993a.30]] — …
+- *Θ* (Θ) /book 9, from 1045b/
+  - [[id:…][1048a.27]] — Beere (2009, p. 170) translates…
+
+/3 notes in 14 books · 2026-09-14 22:40/
+#+END:
+```
+
+This wants [`diogenes-books`][books], and only uses what is **already to
+hand** — a work declared in `diogenes-books-declared`, or one whose books were
+found once and remembered. Finding them means reading the whole work, which is
+seconds of Perl, and an index is rebuilt every time a note is saved; so the
+index never asks. Run `diogenes-open-book` on a work once and its index
+divides from then on. Until then, one flat list.
+
+Both the letter and the number are shown, because they differ: Theta is the
+ninth book of the *Metaphysics* and the eighth letter, Alpha Minor having none
+of its own. `diogenes-books` makes the same point, and for the same reason —
+a reader who counts gets it wrong.
+
+Plato's dialogues are declared rather than read, the division of the *Republic*
+into ten books being editorial and carried by the Stephanus pages, which name
+nothing. So `ref/plato/respublica/index.org` divides without anything having
+been run.
+
+A nested list rather than headings, since a dynamic block is a greater element
+and cannot contain a headline. `TAB` folds a book's notes all the same.
+
+Set `diogenes-roam-index-by-book` to nil for one flat list regardless.
+
 It rebuilds itself after every passage capture and whenever a passage note is
 saved -- the index shows each note's first line, so an edit to that line would
 otherwise leave it wrong. `g` rebuilds it by hand.
@@ -240,6 +279,7 @@ same behaviour here.
 | `diogenes-roam-install-capture-template` | nil to write your own template |
 | `diogenes-roam-index-name` | default `"index.org"` |
 | `diogenes-roam-index-snippet-width` | how much of a note's first line to show |
+| `diogenes-roam-index-by-book` | divide into books where they are known |
 
 `diogenes-roam-file-name` is worth a thought. `slug` is the note's title,
 which is what org-roam would have chosen; but the title is built from the
@@ -268,6 +308,7 @@ a note belongs to. It would be noise if you did the same for concept notes.
 GPL-3 or later, matching `diogenes.el`.
 
 [diogenes]: https://github.com/VictorSousa92/diogenes.el
+[books]: https://github.com/VictorSousa92/diogenes.el
 [org-roam]: https://www.orgroam.com/
 [straight]: https://github.com/radian-software/straight.el
 [elpaca]: https://github.com/progfolio/elpaca

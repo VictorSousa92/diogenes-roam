@@ -52,6 +52,10 @@
 (require 'cl-lib)
 (require 'diogenes-roam)
 
+;; OPTIONAL.  Without diogenes-books the index is one flat list, which is what
+;; it was before books were known of.
+(require 'diogenes-books nil t)
+
 (declare-function diogenes-org--passage-parts "diogenes-org" (path))
 (declare-function diogenes-org--same-work-p "diogenes-org" (a b))
 (declare-function diogenes-org--levels "diogenes-org" (key))
@@ -62,6 +66,11 @@
 (declare-function diogenes-browser-reference "diogenes-browser" ())
 (declare-function org-roam-db-query "org-roam-db" (sql &rest args))
 (declare-function org-roam-db-update-file "org-roam-db" (&optional file-path))
+(declare-function diogenes-books--load "diogenes-books" ())
+(declare-function diogenes-books--greek-letter "diogenes-books" (title))
+
+(defvar diogenes-books-declared)
+(defvar diogenes-books--known)
 
 
 ;;;; Options
@@ -79,6 +88,18 @@
   "How much of a note's first line to show beside its citation.
 Nil for none."
   :type '(choice integer (const nil)))
+
+(defcustom diogenes-roam-index-by-book t
+  "Whether to divide the index into the books of the work.
+
+Only where the books are already to hand: declared in
+`diogenes-books-declared', or found once and remembered by `diogenes-books'.
+Finding them means reading the whole work, and an index is rebuilt every time
+a note is saved, so the index never asks for them -- a work whose books are
+unknown gets one flat list, as before.
+
+Run `diogenes-open-book' on a work once and its index divides from then on."
+  :type 'boolean)
 
 (defcustom diogenes-roam-index-side 'right
   "Which edge of the frame the index sits on, beside the browser."
@@ -174,28 +195,104 @@ shorter citation first where one is a prefix of the other."
 
 ;;;; The block
 
+(defun diogenes-roam-index--books (corpus author work)
+  "The books of CORPUS:AUTHOR:WORK, as (TITLE CITATION), or nil.
+
+WHAT IS ALREADY TO HAND, and nothing more.  `diogenes-books--find' will read
+a whole work to find its books, which is seconds of Perl; an index is rebuilt
+every time a note is saved and cannot spend that.  So: declared outright, or
+found once and remembered, or nothing."
+  (when (and diogenes-roam-index-by-book
+             (boundp 'diogenes-books-declared))
+    (let ((key (list corpus author work)))
+      (or (cdr (assoc key diogenes-books-declared))
+          (progn (when (fboundp 'diogenes-books--load) (diogenes-books--load))
+                 (and (boundp 'diogenes-books--known)
+                      (cdr (assoc key diogenes-books--known))))))))
+
+(defun diogenes-roam-index--book-of (cite books)
+  "The book of BOOKS that CITE falls in, as (TITLE CITATION N), or nil.
+
+The last book beginning at or before CITE.  BOOKS are in the order the work
+prints them, so the last that qualifies is the one the passage is in."
+  (let ((n 0) found)
+    (dolist (book books)
+      (setq n (1+ n))
+      (unless (diogenes-roam-index--citation< cite (cadr book))
+        (setq found (list (nth 0 book) (nth 1 book) n))))
+    found))
+
+(defun diogenes-roam-index--group (rows books)
+  "ROWS as ((BOOK . ROWS) ...), in the order of the text.
+BOOK is nil for anything falling before the first book begins."
+  (let (groups)
+    (dolist (row rows)
+      (let* ((book (diogenes-roam-index--book-of (nth 3 (nth 4 row)) books))
+             (cell (assoc book groups)))
+        (if cell
+            (setcdr cell (cons row (cdr cell)))
+          (push (cons book (list row)) groups))))
+    (mapcar (lambda (cell) (cons (car cell) (nreverse (cdr cell))))
+            (nreverse groups))))
+
+(defun diogenes-roam-index--book-label (book)
+  "BOOK as the index heads its notes.
+
+THE LETTER AND THE NUMBER BOTH.  `diogenes-books' is at pains to say that
+they differ -- Theta is the ninth book of the Metaphysics and the eighth
+letter, Alpha Minor having none of its own -- so a reader is shown both rather
+than left to count."
+  (if (null book)
+      "*Before the first book*"
+    (let ((letter (and (fboundp 'diogenes-books--greek-letter)
+                       (diogenes-books--greek-letter (nth 0 book)))))
+      (format "*%s*%s /book %d, from %s/"
+              (nth 0 book)
+              (if letter (format " (%c)" letter) "")
+              (nth 2 book)
+              (nth 1 book)))))
+
+(defun diogenes-roam-index--entry (row &optional indent)
+  "ROW as a list item, INDENT spaces in."
+  (format "%s- [[id:%s][%s]]%s\n"
+          (make-string (or indent 0) ?\s)
+          (nth 1 row)
+          (diogenes-org--where (nth 0 row))
+          (if-let ((s (diogenes-roam-index--snippet (nth 3 row))))
+              (concat " — " s) "")))
+
 (defun org-dblock-write:dio-index (params)
   "Write the list of notes for the work named in PARAMS.
 
 Each note is offered by its passage -- `diogenes-org--where' gives the
 citation alone, the corpus and the author and the work being the same down
 the whole list -- and then by its first line, which is what tells one note on
-1048a27 from another."
+1048a27 from another.
+
+DIVIDED INTO BOOKS where the books are known: a nested list and not headings,
+a dynamic block being a greater element that cannot hold a headline."
   (let* ((corpus (plist-get params :corpus))
          (author (plist-get params :author))
          (work   (plist-get params :work))
-         (rows   (diogenes-roam-index--rows corpus author work)))
-    (if (null rows)
-        (insert "No notes on this work yet.\n")
-      (dolist (r rows)
-        (insert (format "- [[id:%s][%s]]%s\n"
-                        (nth 1 r)
-                        (diogenes-org--where (nth 0 r))
-                        (if-let ((s (diogenes-roam-index--snippet (nth 3 r))))
-                            (concat " — " s) "")))))
-    (insert (format "\n/%d note%s · %s/\n"
+         (rows   (diogenes-roam-index--rows corpus author work))
+         (books  (diogenes-roam-index--books corpus author work)))
+    (cond
+     ((null rows)
+      (insert "No notes on this work yet.\n"))
+     (books
+      (dolist (group (diogenes-roam-index--group rows books))
+        (insert (format "- %s\n" (diogenes-roam-index--book-label (car group))))
+        (dolist (row (cdr group))
+          (insert (diogenes-roam-index--entry row 2)))))
+     (t
+      (dolist (row rows) (insert (diogenes-roam-index--entry row)))))
+    (insert (format "\n/%d note%s%s · %s/\n"
                     (length rows)
                     (if (= 1 (length rows)) "" "s")
+                    (if books
+                        (format " in %d book%s" (length books)
+                                (if (= 1 (length books)) "" "s"))
+                      "")
                     (format-time-string "%Y-%m-%d %H:%M")))))
 
 
