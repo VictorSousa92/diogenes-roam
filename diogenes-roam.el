@@ -247,34 +247,43 @@ target that names one that does not exist is an error."
   (format ":%s:%s:%s:" diogenes-roam-tag
           (diogenes-roam-author-dir) (diogenes-roam-work-dir)))
 
-(defun diogenes-roam-file-name ()
-  "File name for the passage in hand, per `diogenes-roam-file-name'.
-Empty for `slug', which org-roam fills in itself."
-  (pcase diogenes-roam-file-name
-    ('slug "${slug}.org")
-    (kind
-     (let* ((p (diogenes-roam--parts))
-            (ref (and (boundp 'org-roam-capture--info)
-                      (plist-get org-roam-capture--info :ref)))
-            (parts (and ref (ignore-errors
-                              (diogenes-org--passage-parts ref))))
-            (from (or (nth 3 parts) "passage"))
-            (to (nth 4 parts))
-            (cite (diogenes-roam--slug
-                   (concat from (and to (concat "-" to))) "passage")))
-       (ignore p)
-       (if (eq kind 'timestamped)
-           (concat (format-time-string "%Y%m%d%H%M%S-") cite ".org")
-         (concat cite ".org"))))))
+(defun diogenes-roam--citation-file-name ()
+  "The citation of the passage in hand as a file name.
+
+NOT FOR THE `slug' CASE, which never passes through here: `${slug}' is
+org-roam's own placeholder and must sit in the template LITERALLY for org-roam
+to expand it.  An elisp escape that returns the string `${slug}.org' expands
+to nothing -- org-capture evaluates `%(...)' after org-roam has made its
+`${...}' pass, so the braces reach the filesystem unread, every capture lands
+in one file called `${slug}.org', and `file+head' appends to it rather than
+making a new note."
+  (let* ((ref (and (boundp 'org-roam-capture--info)
+                   (plist-get org-roam-capture--info :ref)))
+         (parts (and ref (ignore-errors (diogenes-org--passage-parts ref))))
+         (from (or (nth 3 parts) "passage"))
+         (to (nth 4 parts))
+         (cite (diogenes-roam--slug
+                (concat from (and to (concat "-" to))) "passage")))
+    (if (eq diogenes-roam-file-name 'timestamped)
+        (concat (format-time-string "%Y%m%d%H%M%S-") cite ".org")
+      (concat cite ".org"))))
 
 
 ;;;; The capture template
 
 (defun diogenes-roam-capture-template ()
-  "A `diogenes-org-capture-template' that files notes by author and work."
+  "A `diogenes-org-capture-template' that files notes by author and work.
+
+Read when `diogenes-roam-mode' is enabled, so `diogenes-roam-file-name' takes
+effect from the next time the mode is turned on -- `(diogenes-roam-mode -1)'
+and again, or set `diogenes-org-capture-template' by hand."
   `(("d" "a passage" plain "%?"
      :target (file+head
-              "%(diogenes-roam-dir)/%(diogenes-roam-file-name)"
+              ,(concat "%(diogenes-roam-dir)/"
+                       ;; `${slug}' LITERALLY, for org-roam to expand.
+                       (if (eq diogenes-roam-file-name 'slug)
+                           "${slug}.org"
+                         "%(diogenes-roam--citation-file-name)"))
               ,(concat "#+title: ${title}\n"
                        "#+filetags: %(diogenes-roam-tags)\n\n"))
      :unnarrowed t)))
