@@ -157,15 +157,32 @@ with one more column."
                  (diogenes-roam-index--citation<
                   (nth 3 (nth 4 a)) (nth 3 (nth 4 b)))))))
 
+(defun diogenes-roam-index--normalise (cite)
+  "CITE with a lone column letter joined to the page before it.
+
+THE CORPORA ARE NOT OF ONE MIND.  Aristotle\='s lines are printed `1046a.3\=',
+the Bekker page and its column as a single level; Plato\='s are `327.a.5\=', the
+Stephanus column being a level of its own.  And `diogenes-books-declared\='
+writes `327a\=', which is the form `diogenes-open-passage\=' wants.
+
+`diogenes-org--levels\=' reckons `1046a\=' as one number and a bare `a\=' as
+nothing, so `327.a.5\=' comes out (327 0 5) against the declared (3270) and
+every note in the Republic falls before its first book.  Joined, the three
+forms agree."
+  (replace-regexp-in-string "\\.\\([a-e]\\)\\(\\'\\|\\.\\)" "\\1\\2"
+                            (or cite "")))
+
 (defun diogenes-roam-index--citation< (a b)
   "Whether citation A comes strictly before citation B.
 
 `diogenes-org--before-p' answers at-or-before, which is what covering a
 passage wants and what sorting does not: a predicate that calls equals true
 leaves the order undefined.  So: the same arithmetic made strict, with the
-shorter citation first where one is a prefix of the other."
-  (let ((x (diogenes-org--levels a))
-        (y (diogenes-org--levels b)))
+shorter citation first where one is a prefix of the other -- and both sides
+put through `diogenes-roam-index--normalise' first, the corpora and the
+declarations not writing a citation the same way."
+  (let ((x (diogenes-org--levels (diogenes-roam-index--normalise a)))
+        (y (diogenes-org--levels (diogenes-roam-index--normalise b))))
     (catch 'done
       (cl-loop for i in x
                for j in y

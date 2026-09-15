@@ -251,6 +251,12 @@ ninth book of the *Metaphysics* and the eighth letter, Alpha Minor having none
 of its own. `diogenes-books` makes the same point, and for the same reason —
 a reader who counts gets it wrong.
 
+Citations are normalised before they are compared, the corpora not writing
+them the same way: Aristotle's `1046a.3` has the Bekker page and its column as
+one level, Plato's `327.a.5` makes the Stephanus column a level of its own,
+and `diogenes-books-declared` writes `327a`. A lone column letter is joined to
+the page before it, so all three forms agree.
+
 A nested list rather than headings, since a dynamic block is a greater element
 and cannot contain a headline. `TAB` folds a book's notes all the same.
 
