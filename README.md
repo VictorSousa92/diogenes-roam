@@ -221,22 +221,35 @@ Where the books of a work are known, the index groups the notes under them:
 #+END:
 ```
 
-This wants [`diogenes-books`][books], and only uses what is **already to
-hand** — a work declared in `diogenes-books-declared`, or one whose books were
-found once and remembered. Finding them means reading the whole work, which is
-seconds of Perl, and an index is rebuilt every time a note is saved; so the
-index never asks. Run `diogenes-open-book` on a work once and its index
-divides from then on. Until then, one flat list.
+This wants `diogenes-books`, which is on the same org-integration branch —
+nothing extra to install.
+
+**Only Plato and Aristotle, for now.** The corpora do not record books, so
+`diogenes-books` gets them one of two ways, and each is set up for one author:
+
+- **Aristotle** — his books carry titles in the text, `{Θ}` and the like, so
+  they can be found by reading the work. `diogenes-books-read-the-text` is
+  `("0086")`, and Aristotle alone is on it.
+- **Plato** — his are not in the text at all, the division of the *Republic*
+  into ten books being editorial and carried by the Stephanus pages, which
+  mark nothing. So the *Republic*, the *Laws* and the *Letters* are declared
+  outright in `diogenes-books-declared`, from the Oxford text's contents.
+
+Anyone else gets one flat list until you add them. A work whose text names its
+books needs its author number added to `diogenes-books-read-the-text`; a work
+whose text does not needs its books listed in `diogenes-books-declared`, which
+is a matter of typing an edition's table of contents and touches no code.
+
+The index only uses what is **already to hand** — declared, or found once and
+remembered. Finding them means reading the whole work, which is seconds of
+Perl, and an index is rebuilt every time a note is saved; so the index never
+asks. Run `diogenes-open-book` on an Aristotelian work once and its index
+divides from then on. Plato's divide immediately, being declared.
 
 Both the letter and the number are shown, because they differ: Theta is the
 ninth book of the *Metaphysics* and the eighth letter, Alpha Minor having none
 of its own. `diogenes-books` makes the same point, and for the same reason —
 a reader who counts gets it wrong.
-
-Plato's dialogues are declared rather than read, the division of the *Republic*
-into ten books being editorial and carried by the Stephanus pages, which name
-nothing. So `ref/plato/respublica/index.org` divides without anything having
-been run.
 
 A nested list rather than headings, since a dynamic block is a greater element
 and cannot contain a headline. `TAB` folds a book's notes all the same.
@@ -308,7 +321,6 @@ a note belongs to. It would be noise if you did the same for concept notes.
 GPL-3 or later, matching `diogenes.el`.
 
 [diogenes]: https://github.com/VictorSousa92/diogenes.el
-[books]: https://github.com/VictorSousa92/diogenes.el
 [org-roam]: https://www.orgroam.com/
 [straight]: https://github.com/radian-software/straight.el
 [elpaca]: https://github.com/progfolio/elpaca
